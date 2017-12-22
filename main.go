@@ -51,6 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed dialing ts server: %s\n", err)
 	}
+	defer conn.Close()
 	// get the initial message from dialing and read it into the void
 	for {
 		buff := make([]byte, 2048)
@@ -60,9 +61,9 @@ func main() {
 			break
 		}
 	}
+	// Create the main Query Object
 	query := ts3Query.New(conn)
 
-	// login to the ts server
 	if err := query.Login(tsUser, tsPass); err != nil {
 		log.Fatalf("Failed to log in to teamspeak server: %s", err)
 	}
@@ -71,8 +72,7 @@ func main() {
 		log.Fatalf("Failed to use the main virtual Server: %s", err)
 	}
 
-	fmt.Printf("Connected\n")
-	res, err := query.Help("login")
+	res, err := query.ServerGroupList()
 	if err != nil {
 		log.Fatalf("Failed to check help: %s", err)
 	}
