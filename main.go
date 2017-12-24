@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/zanven42/ts3Query"
 )
@@ -20,19 +22,20 @@ func main() {
 	tsUser := os.Getenv("TSBOT_TSUSER")
 	tsPass := os.Getenv("TSBOT_TSPASS")
 	tsLogFile := os.Getenv("TSBOT_LOGFILE")
+	tsDelay := os.Getenv("TSBOT_COMMANDDELAY_MILLISECONDS")
 
 	if *helpFlag == true {
 		//print all help things and leave
 		fmt.Printf(`Environment variable Settings:
- Teamspeak:
-  TSBOT_TSIP=` + tsIP + `
-  TSBOT_TSPORT=` + tsPort + `
-  TSBOT_TSUSER=` + tsUser + `
-  TSBOT_TSPASS=` + tsPass + `
-
- Misc:
-  TSBOT_LOGFILE=` + tsLogFile + `
-`)
+			Teamspeak:
+			TSBOT_TSIP=` + tsIP + `
+			TSBOT_TSPORT=` + tsPort + `
+			TSBOT_TSUSER=` + tsUser + `
+			TSBOT_TSPASS=` + tsPass + `
+			TSBOT_COMMANDDELAY_MILLISECONDS= ` + tsDelay + `
+			Misc:
+			TSBOT_LOGFILE=` + tsLogFile + `
+			`)
 		return
 	}
 
@@ -44,6 +47,9 @@ func main() {
 		}
 		defer f.Close()
 		log.SetOutput(io.MultiWriter(os.Stdout))
+	}
+	if tsDelay == "" {
+		tsDelay = "20"
 	}
 	fmt.Printf("Connecting to server:" + tsIP + ":" + tsPort + " \n")
 	// establish a connection to the teamspeak server
@@ -61,9 +67,14 @@ func main() {
 			break
 		}
 	}
-	// Create the main Query Object
-	query := ts3Query.New(conn)
 
+	delay, err := strconv.Atoi(tsDelay)
+	if err != nil {
+		log.Fatalf("Can't convert delay to int")
+	}
+	// Create the main Query Object
+
+	query := ts3Query.New(conn, time.Millisecond*time.Duration(delay))
 	if err := query.Login(tsUser, tsPass); err != nil {
 		log.Fatalf("Failed to log in to teamspeak server: %s", err)
 	}
@@ -72,9 +83,30 @@ func main() {
 		log.Fatalf("Failed to use the main virtual Server: %s", err)
 	}
 
-	res, err := query.ServerGroupList()
-	if err != nil {
-		log.Fatalf("Failed to check help: %s", err)
+	/*
+		res, err := query.ServerGroupList()
+		if err != nil {
+			log.Fatalf("Failed to check help: %s", err)
+		}
+		log.Println(res)
+	*/
+	clients := query.ClientDBList()
+	for _, v := range clients {
+		fmt.Println(v)
 	}
-	log.Println(res)
+
+	memberclients, err := query.ServerGroupClientList("12")
+	if err != nil {
+		fmt.Printf("err: %s\n", err)
+	}
+	for _, client := range clients {
+		for _, cldbid := range memberclients {
+			if cldbid == client.DBID {
+				fmt.Printf("%#v\n", client)
+			}
+
+		}
+	}
+	fmt.Printf("Client IDS in member group\n%#v\n", memberclients)
+
 }
