@@ -1,0 +1,1 @@
+cd ../ && protoc -I ts3Bot/ ts3Bot/ts3Bot.proto --go_out=plugins=grpc:ts3Bot && cd ./ts3Bot

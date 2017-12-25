@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+service ts3bot {
+	rpc GetUsers(Nil) returns (UserList);
+	rpc GetUser(User) returns (User);
+
+	rpc GetServerGroups(Nil) returns (ServerGroupList);
+	rpc GetUsersInGroup(ServerGroup) returns (UserList);
+	
+	rpc AddUserToGroup(UserAndGroup) returns (Nil);
+	rpc DelUserFromGroup(UserAndGroup) returns (Nil);
+}
+
+message Nil {}
+
+message User {
+	string dbid = 1;
+	string name = 2;
+	string uuid = 3;
+	string created = 4;
+	string lastconnected =5;
+}
+message UserList {
+	repeated User Users = 1;
+}
+
+message ServerGroup {
+	string sgid = 1;
+	string name = 2;
+}
+
+message ServerGroupList {
+	repeated ServerGroup Groups = 1;
+}
+
+message UserAndGroup {
+	User user = 1;
+	ServerGroup group = 2;
+}
