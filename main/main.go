@@ -47,9 +47,15 @@ func (s *server) GetServerGroups(context.Context, *pb.Nil) (result *pb.ServerGro
 }
 
 // TODO
-func (s *server) GetUsersInGroup(ctx context.Context, in *pb.ServerGroup) (*pb.UserList, error) {
-
-	return nil, nil
+func (s *server) GetUsersInGroup(ctx context.Context, in *pb.ServerGroup) (users *pb.UserList, err error) {
+	ids, err := s.Query.ServerGroupClientList(in.Sgid)
+	if err != nil {
+		return
+	}
+	for _, v := range ids {
+		users.Users = append(users.Users, &pb.User{Dbid: v})
+	}
+	return
 }
 
 func (s *server) AddUserToGroup(ctx context.Context, in *pb.UserAndGroup) (n *pb.Nil, err error) {
@@ -80,7 +86,7 @@ func main() {
 	if env.TSCommandDelay == "" {
 		env.TSCommandDelay = "20"
 	}
-	fmt.Printf("Connecting to server:" + env.TSIP + ":" + env.TSPort + " \n")
+
 	// establish a connection to the teamspeak server
 	conn, err := net.Dial("tcp", env.TSIP+":"+env.TSPort)
 	if err != nil {
@@ -94,8 +100,9 @@ func main() {
 	}
 	query, err := QueryConnect(conn, time.Millisecond*time.Duration(delay), env.TSUsername, env.TSPassword)
 	if err != nil {
-
+		log.Fatalf("Failed to connect to teamspeak Server: %s\n", err)
 	}
+	log.Printf("Connected to Teamspeak server: %s : %s\n", env.TSIP, env.TSPort)
 	// establish grpc server to now recieve incoming requests.
 	grpcServer := grpc.NewServer()
 	pb.RegisterTs3BotServer(grpcServer, &server{Query: &query})
@@ -103,6 +110,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on GRPC PORT: %v", err)
 	}
+	log.Printf("GRPC Listening on Port: %s\n", env.GRPCPort)
 	grpcServer.Serve(lis)
 }
 
