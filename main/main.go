@@ -16,26 +16,88 @@ import (
 	"google.golang.org/grpc"
 )
 
+var (
+	env struct {
+		TSIP           string
+		TSPort         string
+		TSUsername     string
+		TSPassword     string
+		TSCommandDelay string
+		TSLogFile      string
+
+		GRPCPort string
+	}
+)
+
+func interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	// establish a connection to the teamspeak server
+	conn, err := net.Dial("tcp", env.TSIP+":"+env.TSPort)
+	if err != nil {
+		err = fmt.Errorf("Failed dialing ts server: %s", err)
+		return
+	}
+	defer conn.Close()
+
+	delay, err := strconv.Atoi(env.TSCommandDelay)
+	if err != nil {
+		err = fmt.Errorf("Can't convert delay to int")
+		return
+	}
+	q, err := QueryConnect(conn, time.Millisecond*time.Duration(delay), env.TSUsername, env.TSPassword)
+	if err != nil {
+		err = fmt.Errorf("Failed to connect to teamspeak Server: %s", err)
+		return
+	}
+
+	server, ok := info.Server.(*server)
+	if ok == false {
+		err = fmt.Errorf("Fucked the casting")
+		return
+	}
+	server.Query = &q
+	resp, err = handler(ctx, req)
+	server.Query.Logout()
+	server.Query.Quit()
+	return
+}
+
 type server struct {
 	Query *ts3Query.Ts3Query
 }
 
 // Returns a list of all users.
 func (s *server) GetUsers(context.Context, *pb.Nil) (users *pb.UserList, err error) {
+	users = &pb.UserList{}
 	clients := s.Query.ClientDBList()
 	for _, client := range clients {
 		users.Users = append(users.Users, &pb.User{Name: client.Name, Dbid: client.DBID, Uuid: client.UUID, Created: client.Created, Lastconnected: client.LastConnected})
 	}
+	fmt.Println("GetUsers found", len(users.Users), "users")
 	return
 }
 
 // Not Implemented
-func (s *server) GetUser(ctx context.Context, in *pb.User) (*pb.User, error) {
-	return nil, nil
+func (s *server) GetUser(ctx context.Context, in *pb.User) (user *pb.User, err error) {
+	user = &pb.User{}
+	clients := s.Query.ClientDBList()
+	for _, client := range clients {
+		if client.DBID == in.Dbid {
+			user.Dbid = client.DBID
+			user.Name = client.Name
+			user.Uuid = client.UUID
+			user.Created = client.Created
+			user.Lastconnected = client.LastConnected
+			fmt.Printf("Found user: \n%#v\n", user)
+			return
+		}
+	}
+	err = fmt.Errorf("no user was found")
+	return
 }
 
 //
 func (s *server) GetServerGroups(context.Context, *pb.Nil) (result *pb.ServerGroupList, err error) {
+	result = &pb.ServerGroupList{}
 	groups, err := s.Query.ServerGroupList()
 	if err != nil {
 		return
@@ -48,6 +110,7 @@ func (s *server) GetServerGroups(context.Context, *pb.Nil) (result *pb.ServerGro
 
 // TODO
 func (s *server) GetUsersInGroup(ctx context.Context, in *pb.ServerGroup) (users *pb.UserList, err error) {
+	users = &pb.UserList{}
 	ids, err := s.Query.ServerGroupClientList(in.Sgid)
 	if err != nil {
 		return
@@ -69,7 +132,7 @@ func (s *server) DelUserFromGroup(ctx context.Context, in *pb.UserAndGroup) (n *
 }
 
 func main() {
-	env, err := passENV()
+	err := passENV()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -87,31 +150,37 @@ func main() {
 		env.TSCommandDelay = "20"
 	}
 
-	// establish a connection to the teamspeak server
-	conn, err := net.Dial("tcp", env.TSIP+":"+env.TSPort)
-	if err != nil {
-		log.Fatalf("Failed dialing ts server: %s\n", err)
-	}
-	defer conn.Close()
-
-	delay, err := strconv.Atoi(env.TSCommandDelay)
-	if err != nil {
-		log.Fatalf("Can't convert delay to int")
-	}
-	query, err := QueryConnect(conn, time.Millisecond*time.Duration(delay), env.TSUsername, env.TSPassword)
-	if err != nil {
-		log.Fatalf("Failed to connect to teamspeak Server: %s\n", err)
-	}
-	log.Printf("Connected to Teamspeak server: %s : %s\n", env.TSIP, env.TSPort)
-	// establish grpc server to now recieve incoming requests.
-	grpcServer := grpc.NewServer()
-	pb.RegisterTs3BotServer(grpcServer, &server{Query: &query})
+	opt := grpc.UnaryInterceptor(interceptor)
+	grpcServer := grpc.NewServer(opt)
+	pb.RegisterTs3BotServer(grpcServer, &server{})
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", env.GRPCPort))
 	if err != nil {
 		log.Fatalf("Failed to listen on GRPC PORT: %v", err)
 	}
 	log.Printf("GRPC Listening on Port: %s\n", env.GRPCPort)
 	grpcServer.Serve(lis)
+}
+
+func login() (query ts3Query.Ts3Query, connection *net.Conn, err error) {
+	if env.TSCommandDelay == "" {
+		env.TSCommandDelay = "20"
+	}
+	// establish a connection to the teamspeak server
+	conn, err := net.Dial("tcp", env.TSIP+":"+env.TSPort)
+	if err != nil {
+		err = fmt.Errorf("Failed dialing ts server: %s", err)
+		return
+	}
+	connection = &conn
+
+	delay, err := strconv.Atoi(env.TSCommandDelay)
+	if err != nil {
+		err = fmt.Errorf("Can't convert delay to int")
+		return
+	}
+	query, err = QueryConnect(conn, time.Millisecond*time.Duration(delay), env.TSUsername, env.TSPassword)
+	err = fmt.Errorf("Testing the error yo")
+	return
 }
 
 // QueryConnect takes the tcp connection and connects to the ts3 query. it first removes the connection response followed by logging into the ts server
@@ -129,6 +198,7 @@ func QueryConnect(rw io.ReadWriter, commandDelay time.Duration, tsUser string, t
 	// Create the main Query Object
 
 	query = ts3Query.New(rw, commandDelay)
+
 	if err = query.Login(tsUser, tsPass); err != nil {
 		log.Fatalf("Failed to log in to teamspeak server: %s", err)
 	}
@@ -139,16 +209,7 @@ func QueryConnect(rw io.ReadWriter, commandDelay time.Duration, tsUser string, t
 	return
 }
 
-func passENV() (env struct {
-	TSIP           string
-	TSPort         string
-	TSUsername     string
-	TSPassword     string
-	TSCommandDelay string
-	TSLogFile      string
-
-	GRPCPort string
-}, err error) {
+func passENV() (err error) {
 
 	helpFlag := flag.Bool("help", false, "If Defined will print the help menu")
 	flag.Parse()
