@@ -81,15 +81,29 @@ func (s *server) GetUser(ctx context.Context, in *pb.User) (user *pb.User, err e
 	user = &pb.User{}
 	clients := s.Query.ClientDBList()
 	for _, client := range clients {
+		userFound := false
 		if client.DBID == in.Dbid {
-			user.Dbid = client.DBID
-			user.Name = client.Name
-			user.Uuid = client.UUID
-			user.Created = client.Created
-			user.Lastconnected = client.LastConnected
-			fmt.Printf("Found user: \n%#v\n", user)
-			return
+			userFound = true
 		}
+
+		if client.UUID == in.Uuid {
+			userFound = true
+		}
+
+		if client.Name == in.Name {
+			userFound = true
+		}
+
+		if userFound == false {
+			continue
+		}
+
+		user.Dbid = client.DBID
+		user.Name = client.Name
+		user.Uuid = client.UUID
+		user.Created = client.Created
+		user.Lastconnected = client.LastConnected
+		fmt.Printf("Found user: \n%#v\n", user)
 	}
 	err = fmt.Errorf("no user was found")
 	return
