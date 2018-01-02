@@ -104,6 +104,7 @@ func (s *server) GetUser(ctx context.Context, in *pb.User) (user *pb.User, err e
 		user.Created = client.Created
 		user.Lastconnected = client.LastConnected
 		fmt.Printf("Found user: \n%#v\n", user)
+		return
 	}
 	err = fmt.Errorf("no user was found")
 	return
