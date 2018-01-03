@@ -11,39 +11,32 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/SOCOMD/env"
+
 	pb "github.com/SOCOMD/ts3Bot"
 	"github.com/zanven42/ts3Query"
 	"google.golang.org/grpc"
 )
 
 var (
-	env struct {
-		TSIP           string
-		TSPort         string
-		TSUsername     string
-		TSPassword     string
-		TSCommandDelay string
-		TSLogFile      string
-
-		GRPCPort string
-	}
+	e env.Env
 )
 
 func interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 	// establish a connection to the teamspeak server
-	conn, err := net.Dial("tcp", env.TSIP+":"+env.TSPort)
+	conn, err := net.Dial("tcp", e.Tsbot.TSHost+":"+e.Tsbot.TSPort)
 	if err != nil {
 		err = fmt.Errorf("Failed dialing ts server: %s", err)
 		return
 	}
 	defer conn.Close()
 
-	delay, err := strconv.Atoi(env.TSCommandDelay)
+	delay, err := strconv.Atoi(e.Tsbot.TSDelay)
 	if err != nil {
 		err = fmt.Errorf("Can't convert delay to int")
 		return
 	}
-	q, err := QueryConnect(conn, time.Millisecond*time.Duration(delay), env.TSUsername, env.TSPassword)
+	q, err := QueryConnect(conn, time.Millisecond*time.Duration(delay), e.Tsbot.TSUser, e.Tsbot.TSPass)
 	if err != nil {
 		err = fmt.Errorf("Failed to connect to teamspeak Server: %s", err)
 		return
@@ -78,6 +71,7 @@ func (s *server) GetUsers(context.Context, *pb.Nil) (users *pb.UserList, err err
 
 // Not Implemented
 func (s *server) GetUser(ctx context.Context, in *pb.User) (user *pb.User, err error) {
+	fmt.Println("Get User Called")
 	user = &pb.User{}
 	clients := s.Query.ClientDBList()
 	for _, client := range clients {
@@ -147,53 +141,53 @@ func (s *server) DelUserFromGroup(ctx context.Context, in *pb.UserAndGroup) (n *
 }
 
 func main() {
-	err := passENV()
-	if err != nil {
-		fmt.Println(err)
+	helpFlag := flag.Bool("help", false, "If Defined will print the help menu")
+	flag.Parse()
+	e = env.Get()
+	if *helpFlag == true {
+		//print all help things and leave
+		fmt.Println(e)
 		return
 	}
 	// if a log file is specified make the system log to the file and to stdout
-	if env.TSLogFile != "" {
-		f, err := os.OpenFile(env.TSLogFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if e.Tsbot.LogFile != "" {
+		f, err := os.OpenFile(e.Tsbot.LogFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 		if err != nil {
 			log.Fatalf("Failed to open log file: %s", err)
 		}
 		defer f.Close()
 		log.SetOutput(io.MultiWriter(os.Stdout))
 	}
-	if env.TSCommandDelay == "" {
-		env.TSCommandDelay = "20"
+	if e.Tsbot.TSDelay == "" {
+		e.Tsbot.TSDelay = "20"
 	}
 
 	opt := grpc.UnaryInterceptor(interceptor)
 	grpcServer := grpc.NewServer(opt)
 	pb.RegisterTs3BotServer(grpcServer, &server{})
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", env.GRPCPort))
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%s", e.Tsbot.GrpcHost, e.Tsbot.GrpcPort))
 	if err != nil {
 		log.Fatalf("Failed to listen on GRPC PORT: %v", err)
 	}
-	log.Printf("GRPC Listening on Port: %s\n", env.GRPCPort)
+	log.Printf("GRPC Listening on %s: %s\n", e.Tsbot.GrpcHost, e.Tsbot.GrpcPort)
 	grpcServer.Serve(lis)
 }
 
 func login() (query ts3Query.Ts3Query, connection *net.Conn, err error) {
-	if env.TSCommandDelay == "" {
-		env.TSCommandDelay = "20"
-	}
 	// establish a connection to the teamspeak server
-	conn, err := net.Dial("tcp", env.TSIP+":"+env.TSPort)
+	conn, err := net.Dial("tcp", e.Tsbot.TSHost+":"+e.Tsbot.TSPort)
 	if err != nil {
 		err = fmt.Errorf("Failed dialing ts server: %s", err)
 		return
 	}
 	connection = &conn
 
-	delay, err := strconv.Atoi(env.TSCommandDelay)
+	delay, err := strconv.Atoi(e.Tsbot.TSDelay)
 	if err != nil {
 		err = fmt.Errorf("Can't convert delay to int")
 		return
 	}
-	query, err = QueryConnect(conn, time.Millisecond*time.Duration(delay), env.TSUsername, env.TSPassword)
+	query, err = QueryConnect(conn, time.Millisecond*time.Duration(delay), e.Tsbot.TSUser, e.Tsbot.TSPass)
 	err = fmt.Errorf("Testing the error yo")
 	return
 }
@@ -220,36 +214,6 @@ func QueryConnect(rw io.ReadWriter, commandDelay time.Duration, tsUser string, t
 
 	if err := query.Use("1"); err != nil {
 		log.Fatalf("Failed to use the main virtual Server: %s", err)
-	}
-	return
-}
-
-func passENV() (err error) {
-
-	helpFlag := flag.Bool("help", false, "If Defined will print the help menu")
-	flag.Parse()
-	env.TSIP = os.Getenv("TSBOT_TSIP")
-	env.TSPort = os.Getenv("TSBOT_TSPORT")
-	env.TSUsername = os.Getenv("TSBOT_TSUSER")
-	env.TSPassword = os.Getenv("TSBOT_TSPASS")
-	env.TSLogFile = os.Getenv("TSBOT_LOGFILE")
-	env.TSCommandDelay = os.Getenv("TSBOT_COMMANDDELAY_MILLISECONDS")
-	env.GRPCPort = os.Getenv("TSBOT_GRPC_PORT")
-
-	if *helpFlag == true {
-		//print all help things and leave
-		err = fmt.Errorf(`Environment variable Settings:
-Teamspeak:
-  TSBOT_TSIP=` + env.TSIP + `
-  TSBOT_TSPORT=` + env.TSPort + `
-  TSBOT_TSUSER=` + env.TSUsername + `
-  TSBOT_TSPASS=` + env.TSPassword + `
-  TSBOT_COMMANDDELAY_MILLISECONDS= ` + env.TSCommandDelay + `
-Misc:
-  TSBOT_LOGFILE=` + env.TSLogFile + `
-  TSBOT_GRPC_PORT=` + env.GRPCPort + `
-`)
-
 	}
 	return
 }
