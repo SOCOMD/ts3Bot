@@ -3,6 +3,7 @@ syntax = "proto3";
 service ts3bot {
 	rpc GetUsers(Nil) returns (UserList);
 	rpc GetUser(User) returns (User);
+	rpc ClientList(Nil) returns (UserList);
 
 	rpc GetServerGroups(Nil) returns (ServerGroupList);
 	rpc GetUsersInGroup(ServerGroup) returns (UserList);

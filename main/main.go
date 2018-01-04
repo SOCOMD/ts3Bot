@@ -104,6 +104,21 @@ func (s *server) GetUser(ctx context.Context, in *pb.User) (user *pb.User, err e
 	return
 }
 
+func (s *server) ClientList(ctx context.Context, in *pb.Nil) (users *pb.UserList, err error) {
+	users = &pb.UserList{}
+	clients, err := s.Query.ClientList()
+	if err != nil {
+		return
+	}
+
+	for _, client := range clients {
+		users.Users = append(users.Users, &pb.User{Name: client.Name, Dbid: client.DBID, Uuid: client.UUID, Created: client.Created, Lastconnected: client.LastConnected})
+	}
+
+	fmt.Println("ClientList found", len(users.Users), "users")
+	return
+}
+
 //
 func (s *server) GetServerGroups(context.Context, *pb.Nil) (result *pb.ServerGroupList, err error) {
 	result = &pb.ServerGroupList{}
