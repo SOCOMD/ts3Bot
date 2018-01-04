@@ -16,3 +16,4 @@
 run.sh
 run.bat
 build_grpc.bat
+run_dev.bat

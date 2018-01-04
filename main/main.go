@@ -157,13 +157,10 @@ func (s *server) DelUserFromGroup(ctx context.Context, in *pb.UserAndGroup) (n *
 
 func main() {
 	helpFlag := flag.Bool("help", false, "If Defined will print the help menu")
+	devFlag := flag.Bool("dev", false, "If Defined will run dev code instead of hosting bot")
 	flag.Parse()
 	e = env.Get()
-	if *helpFlag == true {
-		//print all help things and leave
-		fmt.Println(e)
-		return
-	}
+
 	// if a log file is specified make the system log to the file and to stdout
 	if e.Tsbot.LogFile != "" {
 		f, err := os.OpenFile(e.Tsbot.LogFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
@@ -173,8 +170,26 @@ func main() {
 		defer f.Close()
 		log.SetOutput(io.MultiWriter(os.Stdout))
 	}
+
 	if e.Tsbot.TSDelay == "" {
 		e.Tsbot.TSDelay = "20"
+	}
+
+	if *helpFlag == true {
+		//print all help things and leave
+		fmt.Println(e)
+		return
+	}
+
+	if *devFlag == true {
+		ts3Query, _, err := login()
+		if err != nil {
+			panic(err.Error())
+		}
+
+		dev(ts3Query)
+
+		return
 	}
 
 	opt := grpc.UnaryInterceptor(interceptor)
@@ -203,7 +218,6 @@ func login() (query ts3Query.Ts3Query, connection *net.Conn, err error) {
 		return
 	}
 	query, err = QueryConnect(conn, time.Millisecond*time.Duration(delay), e.Tsbot.TSUser, e.Tsbot.TSPass)
-	err = fmt.Errorf("Testing the error yo")
 	return
 }
 
@@ -231,4 +245,11 @@ func QueryConnect(rw io.ReadWriter, commandDelay time.Duration, tsUser string, t
 		log.Fatalf("Failed to use the main virtual Server: %s", err)
 	}
 	return
+}
+
+func dev(ts3Query ts3Query.Ts3Query) {
+	clients, _ := ts3Query.ClientList()
+	for _, client := range clients {
+		fmt.Println(client.Name, ":", client.DBID, ":", client.UUID)
+	}
 }
