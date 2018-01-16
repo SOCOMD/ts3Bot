@@ -248,8 +248,71 @@ func QueryConnect(rw io.ReadWriter, commandDelay time.Duration, tsUser string, t
 }
 
 func dev(ts3Query ts3Query.Ts3Query) {
-	clients, _ := ts3Query.ClientList()
-	for _, client := range clients {
-		fmt.Println(client.Name, ":", client.DBID, ":", client.UUID)
+
+}
+
+func cleanupClientTags(ts3Query ts3Query.Ts3Query) {
+	dbClients := ts3Query.ClientDBList()
+	if dbClients == nil {
+		return
+	}
+
+	currentTime := time.Now().Unix()
+
+	for _, client := range dbClients {
+
+		if client.Name == "ServerQuery Guest" {
+			continue
+		}
+
+		lastConnected, _ := strconv.Atoi(client.LastConnected)
+		elapsed := currentTime - int64(lastConnected)
+		elapsedInDays := elapsed / 86400
+
+		if elapsedInDays <= 180 {
+			continue
+		}
+
+		serverGroups, err := ts3Query.ServerGroupByClientID(client.DBID)
+		if err != nil {
+			continue
+		}
+
+		isRetired := false
+		for _, serverGroup := range serverGroups {
+			if serverGroup.SGID == "11" {
+				isRetired = true
+				break
+			}
+
+			if serverGroup.SGID == "8" {
+				isRetired = true
+				break
+			}
+		}
+
+		if isRetired == true {
+			continue
+		}
+
+		fmt.Printf("\n\n===== %s =====\n", client.Name)
+		for _, serverGroup := range serverGroups {
+			fmt.Printf("%s\n", serverGroup.Name)
+		}
+		fmt.Printf("Remove %s (Y/N)?\n", client.Name)
+
+		var res string
+		fmt.Scanf("%s\n", &res)
+		if res != "y" && res != "Y" {
+			continue
+		}
+
+		for _, serverGroup := range serverGroups {
+			err = ts3Query.ServerGroupDelClient(client.DBID, serverGroup.SGID)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+		}
 	}
 }
